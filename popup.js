@@ -16,7 +16,6 @@ async function fetchAnalytics(tabUrl) {
     const apiKey = config.apiKey;
 
     const videoApiUrl = `https://www.googleapis.com/youtube/v3/videos?part=statistics,snippet,contentDetails&id=${videoId}&key=${apiKey}`;
-
     const videoResponse = await fetch(videoApiUrl);
     const videoData = await videoResponse.json();
 
@@ -31,7 +30,6 @@ async function fetchAnalytics(tabUrl) {
     const channelId = videoSnippet.channelId;
 
     const channelApiUrl = `https://www.googleapis.com/youtube/v3/channels?part=statistics,snippet,brandingSettings,contentDetails&id=${channelId}&key=${apiKey}`;
-
     const channelResponse = await fetch(channelApiUrl);
     const channelData = await channelResponse.json();
 
@@ -51,7 +49,7 @@ async function fetchAnalytics(tabUrl) {
       Subscriber Count: ${channelStats.subscriberCount}
       Total Views: ${channelStats.viewCount}
       Total Videos: ${channelStats.videoCount}
-      
+
       Video Title: ${videoSnippet.title}
       Video View Count: ${videoStats.viewCount}
       Video Like Count: ${videoStats.likeCount}
@@ -66,11 +64,52 @@ async function fetchAnalytics(tabUrl) {
   }
 }
 
+async function fetchMp3Base64(tabUrl) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      { action: "fetchMp3", videoUrl: tabUrl },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+        } else if (response.error) {
+          reject(new Error(response.error));
+        } else if (!response.base64_webm || !response.transcription_response) {
+          reject(new Error("No base64_webm or transcription_response found in the response"));
+        } else {
+          resolve({
+            base64_webm: response.base64_webm,
+            transcription_response: response.transcription_response
+          });
+        }
+      }
+    );
+  });
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
     const tabUrl = tabs[0].url;
     const analyticsDataDiv = document.getElementById('analytics-data');
-    const analyticsMessage = await fetchAnalytics(tabUrl);
-    analyticsDataDiv.textContent = analyticsMessage;
+    const audioStatusDiv = document.getElementById('audio-status');
+    const transcriptionDiv = document.getElementById('transcription-data');
+    
+    try {
+      const analyticsMessage = await fetchAnalytics(tabUrl);
+      analyticsDataDiv.textContent = analyticsMessage;
+    } catch (error) {
+      analyticsDataDiv.textContent = "Error loading analytics data.";
+      console.error('Error in fetchAnalytics:', error);
+    }
+
+    try {
+      const { base64_webm, transcription_response } = await fetchMp3Base64(tabUrl);
+      console.log('Base64 MP3:', base64_webm.substring(0, 100) + '...');
+      audioStatusDiv.textContent = "Audio processing done!";
+      transcriptionDiv.textContent = JSON.stringify(transcription_response, null, 2);
+    } catch (error) {
+      audioStatusDiv.textContent = "Error processing audio.";
+      transcriptionDiv.textContent = error.message;
+      console.error('Error in fetchMp3Base64:', error);
+    }
   });
 });
