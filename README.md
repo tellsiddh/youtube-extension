@@ -2,6 +2,12 @@
 
 This Chrome extension fetches YouTube analytics data and audio transcriptions for a specified YouTube video. The extension uses the YouTube Data API to retrieve analytics data and a local server to fetch audio transcriptions.
 
+![Analytics](README_assets/Analytics.png)
+*Example of Analytics Data*
+
+![Transcription](README_assets/Transcription.png)
+*Example of Transcription*
+
 ## Features
 
 - Fetch YouTube video analytics including:
