@@ -43,9 +43,9 @@ async function fetchAnalytics(tabUrl) {
 
     const analyticsMessage = `
       <div class="section-title">Channel Name:</div>
-      <div class="section-content">${channelSnippet.title}</div>
+      <div class="section-content">${escapeHTML(channelSnippet.title)}</div>
       <div class="section-title">Channel Description:</div>
-      <div class="section-content">${channelSnippet.description}</div>
+      <div class="section-content">${escapeHTML(channelSnippet.description)}</div>
       <div class="section-title">Subscriber Count:</div>
       <div class="section-content">${channelStats.subscriberCount.toLocaleString()}</div>
       <div class="section-title">Total Views:</div>
@@ -53,7 +53,7 @@ async function fetchAnalytics(tabUrl) {
       <div class="section-title">Total Videos:</div>
       <div class="section-content">${channelStats.videoCount.toLocaleString()}</div>
       <div class="section-title">Video Title:</div>
-      <div class="section-content">${videoSnippet.title}</div>
+      <div class="section-content">${escapeHTML(videoSnippet.title)}</div>
       <div class="section-title">Video View Count:</div>
       <div class="section-content">${videoStats.viewCount.toLocaleString()}</div>
       <div class="section-title">Video Like Count:</div>
@@ -71,6 +71,18 @@ async function fetchAnalytics(tabUrl) {
   }
 }
 
+function escapeHTML(str) {
+  return str.replace(/[&<>'"]/g, tag => (
+    {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      "'": '&#39;',
+      '"': '&quot;'
+    }[tag] || tag
+  ));
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
     const tabUrl = tabs[0].url;
@@ -80,8 +92,10 @@ document.addEventListener('DOMContentLoaded', () => {
     
     try {
       const analyticsMessage = await fetchAnalytics(tabUrl);
-      analyticsDataDiv.innerHTML = analyticsMessage;
-      analyticsDataDiv.classList.remove('loading');
+      setTimeout(() => {
+        analyticsDataDiv.innerHTML = analyticsMessage;
+        analyticsDataDiv.classList.remove('loading');
+      }, 100); // Delay of 100 milliseconds
     } catch (error) {
       analyticsDataDiv.textContent = "Error loading analytics data.";
       analyticsDataDiv.classList.remove('loading');
@@ -90,9 +104,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       const transcription = await fetchMp3Base64(tabUrl);
-      audioStatusDiv.textContent = "Audio processing done!";
-      audioStatusDiv.classList.remove('loading');
-      transcriptionDiv.textContent = transcription;
+      setTimeout(() => {
+        audioStatusDiv.textContent = "Audio processing done!";
+        audioStatusDiv.classList.remove('loading');
+        transcriptionDiv.textContent = transcription;
+      }, 100); // Delay of 100 milliseconds
     } catch (error) {
       audioStatusDiv.textContent = "Error processing audio.";
       audioStatusDiv.classList.remove('loading');
