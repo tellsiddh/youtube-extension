@@ -1,9 +1,8 @@
 aiohttp==3.9.5
 Flask==3.0.3
 Flask-Cors==4.0.1
-google-api-core==2.19.1
 google-api-python-client==2.138.0
 pydub==0.25.1
+pytube==15.0.0
 requests==2.32.3
-websockets==12.0
 yt-dlp==2024.7.25
