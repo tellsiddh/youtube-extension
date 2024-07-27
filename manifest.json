@@ -4,6 +4,7 @@
   "version": "1.0",
   "description": "Fetches YouTube video analytics from the current tab URL",
   "permissions": [
+    "storage",
     "activeTab",
     "scripting"
   ],

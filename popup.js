@@ -40,21 +40,28 @@ async function fetchAnalytics(tabUrl) {
 
     const channelStats = channelData.items[0].statistics;
     const channelSnippet = channelData.items[0].snippet;
-    const channelBranding = channelData.items[0].brandingSettings;
-    const channelContentDetails = channelData.items[0].contentDetails;
 
     const analyticsMessage = `
-      Channel Name: ${channelSnippet.title}
-      Channel Description: ${channelSnippet.description}
-      Subscriber Count: ${channelStats.subscriberCount}
-      Total Views: ${channelStats.viewCount}
-      Total Videos: ${channelStats.videoCount}
-
-      Video Title: ${videoSnippet.title}
-      Video View Count: ${videoStats.viewCount}
-      Video Like Count: ${videoStats.likeCount}
-      Video Comment Count: ${videoStats.commentCount}
-      Video Duration: ${videoContentDetails.duration}
+      <div class="section-title">Channel Name:</div>
+      <div class="section-content">${channelSnippet.title}</div>
+      <div class="section-title">Channel Description:</div>
+      <div class="section-content">${channelSnippet.description}</div>
+      <div class="section-title">Subscriber Count:</div>
+      <div class="section-content">${channelStats.subscriberCount.toLocaleString()}</div>
+      <div class="section-title">Total Views:</div>
+      <div class="section-content">${channelStats.viewCount.toLocaleString()}</div>
+      <div class="section-title">Total Videos:</div>
+      <div class="section-content">${channelStats.videoCount.toLocaleString()}</div>
+      <div class="section-title">Video Title:</div>
+      <div class="section-content">${videoSnippet.title}</div>
+      <div class="section-title">Video View Count:</div>
+      <div class="section-content">${videoStats.viewCount.toLocaleString()}</div>
+      <div class="section-title">Video Like Count:</div>
+      <div class="section-content">${videoStats.likeCount ? videoStats.likeCount.toLocaleString() : 'N/A'}</div>
+      <div class="section-title">Video Comment Count:</div>
+      <div class="section-content">${videoStats.commentCount ? videoStats.commentCount.toLocaleString() : 'N/A'}</div>
+      <div class="section-title">Video Duration:</div>
+      <div class="section-content">${videoContentDetails.duration}</div>
     `;
 
     return analyticsMessage;
@@ -64,21 +71,71 @@ async function fetchAnalytics(tabUrl) {
   }
 }
 
+document.addEventListener('DOMContentLoaded', () => {
+  chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
+    const tabUrl = tabs[0].url;
+    const analyticsDataDiv = document.getElementById('analytics-data');
+    const audioStatusDiv = document.getElementById('audio-status');
+    const transcriptionDiv = document.getElementById('transcription-data');
+    
+    try {
+      const analyticsMessage = await fetchAnalytics(tabUrl);
+      analyticsDataDiv.innerHTML = analyticsMessage;
+      analyticsDataDiv.classList.remove('loading');
+    } catch (error) {
+      analyticsDataDiv.textContent = "Error loading analytics data.";
+      analyticsDataDiv.classList.remove('loading');
+      console.error('Error in fetchAnalytics:', error);
+    }
+
+    try {
+      const transcription = await fetchMp3Base64(tabUrl);
+      audioStatusDiv.textContent = "Audio processing done!";
+      audioStatusDiv.classList.remove('loading');
+      transcriptionDiv.textContent = transcription;
+    } catch (error) {
+      audioStatusDiv.textContent = "Error processing audio.";
+      audioStatusDiv.classList.remove('loading');
+      transcriptionDiv.textContent = error.message;
+      console.error('Error in fetchMp3Base64:', error);
+    }
+  });
+});
+
+
 async function fetchMp3Base64(tabUrl) {
   return new Promise((resolve, reject) => {
+    if (!chrome.runtime || !chrome.runtime.sendMessage) {
+      return reject(new Error('Chrome runtime or sendMessage API is not available.'));
+    }
+    if (!chrome.storage || !chrome.storage.local) {
+      return reject(new Error('Chrome storage or storage.local API is not available.'));
+    }
+
     chrome.runtime.sendMessage(
       { action: "fetchMp3", videoUrl: tabUrl },
       (response) => {
         if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
+          return reject(new Error(chrome.runtime.lastError.message));
         } else if (response.error) {
-          reject(new Error(response.error));
-        } else if (!response.base64_webm || !response.transcription_response) {
-          reject(new Error("No base64_webm or transcription_response found in the response"));
+          return reject(new Error(response.error));
+        } else if (!response.success || !response.storageKey) {
+          return reject(new Error("No success or storageKey found in the response"));
         } else {
-          resolve({
-            base64_webm: response.base64_webm,
-            transcription_response: response.transcription_response
+          // Retrieve data from Chrome local storage
+          chrome.storage.local.get(response.storageKey, (result) => {
+            if (chrome.runtime.lastError) {
+              return reject(new Error(chrome.runtime.lastError.message));
+            } else {
+              const transcription = result[response.storageKey];
+              if (!transcription) {
+                return reject(new Error("No transcription found in local storage"));
+              } else {
+                resolve(transcription);
+                // Optionally remove the stored data after retrieval to clean up
+                chrome.storage.local.remove(response.storageKey);
+              }
+            }
           });
         }
       }
@@ -102,10 +159,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const { base64_webm, transcription_response } = await fetchMp3Base64(tabUrl);
-      console.log('Base64 MP3:', base64_webm.substring(0, 100) + '...');
+      const transcription = await fetchMp3Base64(tabUrl);
       audioStatusDiv.textContent = "Audio processing done!";
-      transcriptionDiv.textContent = JSON.stringify(transcription_response, null, 2);
+      transcriptionDiv.textContent = transcription;
     } catch (error) {
       audioStatusDiv.textContent = "Error processing audio.";
       transcriptionDiv.textContent = error.message;

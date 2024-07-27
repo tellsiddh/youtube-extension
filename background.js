@@ -20,9 +20,15 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       if (data.error) {
         throw new Error(data.error);
       }
-      sendResponse({ 
-        base64_webm: data.base64_webm, 
-        transcription_response: data.transcription_response || data.response.transcription_text
+
+      const transcription = data.transcription_response || data.response.transcription_text;
+      const storageKey = `transcription_${Date.now()}`;
+      
+      chrome.storage.local.set({ [storageKey]: transcription }, () => {
+        if (chrome.runtime.lastError) {
+          throw new Error(chrome.runtime.lastError.message);
+        }
+        sendResponse({ success: true, storageKey });
       });
     })
     .catch(error => {

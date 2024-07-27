@@ -8,6 +8,9 @@ import logging
 import os
 import json
 import requests
+from pydub import AudioSegment
+import asyncio
+import aiohttp
 
 app = Flask(__name__)
 logging.basicConfig(level=logging.DEBUG)
@@ -36,6 +39,39 @@ def get_cached_audio(video_id):
 def load_config():
     with open('config.json', 'r') as config_file:
         return json.load(config_file)
+
+def split_audio(audio_segment, chunk_size=6 * 1024 * 1024):
+    chunk_length = int((chunk_size / audio_segment.frame_rate / audio_segment.frame_width / audio_segment.channels) * 1000)
+    chunks = [audio_segment[i:i + chunk_length] for i in range(0, len(audio_segment), chunk_length)]
+    return chunks
+
+def convert_chunk_to_mp3(chunk):
+    mp3_io = io.BytesIO()
+    chunk.export(mp3_io, format="mp3")
+    return mp3_io.getvalue()
+
+async def transcribe_chunk(session, chunk_base64, dev_url, headers, model_provider, model_name):
+    audio_body = {
+        "query": "can you transcribe this",
+        "audio_file": chunk_base64,
+        "model_provider": model_provider,
+        "model_name": model_name
+    }
+    async with session.post(dev_url, json=audio_body, headers=headers) as response:
+        response_data = await response.json()
+        app.logger.debug(f"Transcription API response: {response_data}")
+        return response_data.get("response", {}).get("transcription_text", {}).get("text")
+
+async def transcribe_audio_chunks(audio_chunks, dev_url, headers, model_provider, model_name):
+    async with aiohttp.ClientSession() as session:
+        tasks = []
+        for chunk in audio_chunks:
+            mp3_chunk = convert_chunk_to_mp3(chunk)
+            chunk_base64 = base64.b64encode(mp3_chunk).decode('utf-8')
+            tasks.append(transcribe_chunk(session, chunk_base64, dev_url, headers, model_provider, model_name))
+        transcriptions = await asyncio.gather(*tasks)
+        app.logger.debug(f"Transcriptions: {transcriptions}")
+        return " ".join(transcriptions)
 
 @app.route('/fetch_mp3', methods=['POST', 'OPTIONS'])
 def fetch_mp3():
@@ -77,53 +113,40 @@ def fetch_mp3():
             if cached_audio and cached_transcription:
                 app.logger.info("Using cached audio and transcription")
                 base64_audio = cached_audio
-                transcription_text = cached_transcription
+                transcription_string = cached_transcription
             else:
                 app.logger.info("Downloading audio")
                 result = ydl.extract_info(video_url, download=True)  # Now download the audio
                 audio_file_path = ydl.prepare_filename(result)
 
                 app.logger.info(f"Loading audio file from: {audio_file_path}")
-                with open(audio_file_path, "rb") as webm_file:
-                    encoded_string = base64.b64encode(webm_file.read())
-                    base64_audio = encoded_string.decode('utf-8')
+                audio = AudioSegment.from_file(audio_file_path)
+                audio_chunks = split_audio(audio)
 
-                app.logger.info("Sending audio to external API")
+                app.logger.info("Sending audio chunks to external API")
                 config = load_config()
                 dev_key = config.get('dev_key')
                 dev_url = config.get('dev_url')
-
-                audio_body = {
-                    "query": "can you transcribe this",
-                    "audio_file": base64_audio,
-                    "model_provider": model_provider,
-                    "model_name": model_name
-                }
 
                 headers = {
                     'Authorization': f'Bearer {dev_key}',
                     'Content-Type': 'application/json'
                 }
 
-                response = requests.post(dev_url, json=audio_body, headers=headers)
-                app.logger.info(f"External API response status code: {response.status_code}")
-                app.logger.info(f"External API response content: {response.text}")
+                transcription_text = asyncio.run(transcribe_audio_chunks(audio_chunks, dev_url, headers, model_provider, model_name))
 
-                if response.status_code != 200:
-                    return jsonify({"error": f"External API returned status code {response.status_code}", "content": response.text}), 500
-
-                try:
-                    response_data = response.json()
-                    transcription_text = response_data.get("response").get("transcription_text").get("text")
-                except json.JSONDecodeError as e:
-                    app.logger.error(f"Error decoding JSON response: {str(e)}")
-                    app.logger.error(traceback.format_exc())
-                    return jsonify({"error": "Error decoding JSON response", "content": response.text}), 500
-
+                encoded_string = base64.b64encode(audio.raw_data)
+                base64_audio = encoded_string.decode('utf-8')
+                transcription_string = "".join(transcription_text)
                 app.logger.info("Caching audio and transcription")
-                cache_audio(video_id, base64_audio, transcription_text)
+                cache_audio(video_id, base64_audio, transcription_string)
 
-            return jsonify({"base64_webm": base64_audio, "transcription_response": transcription_text})
+                # Delete the audio file after transcription and caching
+                if os.path.exists(audio_file_path):
+                    os.remove(audio_file_path)
+                    app.logger.info(f"Deleted audio file: {audio_file_path}")
+        
+            return jsonify({"base64_webm": base64_audio, "transcription_response": transcription_string})
 
     except Exception as e:
         app.logger.error(f"Error processing request: {str(e)}")
