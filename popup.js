@@ -158,30 +158,3 @@ async function fetchMp3Base64(tabUrl) {
     );
   });
 }
-
-document.addEventListener('DOMContentLoaded', () => {
-  chrome.tabs.query({ active: true, currentWindow: true }, async (tabs) => {
-    const tabUrl = tabs[0].url;
-    const analyticsDataDiv = document.getElementById('analytics-data');
-    const audioStatusDiv = document.getElementById('audio-status');
-    const transcriptionDiv = document.getElementById('transcription-data');
-    
-    try {
-      const analyticsMessage = await fetchAnalytics(tabUrl);
-      analyticsDataDiv.textContent = analyticsMessage;
-    } catch (error) {
-      analyticsDataDiv.textContent = "Error loading analytics data.";
-      console.error('Error in fetchAnalytics:', error);
-    }
-
-    try {
-      const transcription = await fetchMp3Base64(tabUrl);
-      audioStatusDiv.textContent = "Audio processing done!";
-      transcriptionDiv.textContent = transcription;
-    } catch (error) {
-      audioStatusDiv.textContent = "Error processing audio.";
-      transcriptionDiv.textContent = error.message;
-      console.error('Error in fetchMp3Base64:', error);
-    }
-  });
-});
